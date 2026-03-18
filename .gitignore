@@ -1,0 +1,8 @@
+# 의존성 폴더
+node_modules/
+
+# 환경 변수 파일 (디스코드 봇 토큰 등 중요 정보 포함)
+.env
+
+# 로컬 데이터 저장 파일
+threadMetadata.json
