@@ -37,6 +37,12 @@ function renderEmoji(emoji) {
   return `${emoji} `;
 }
 
+// 텍스트 말줄임 헬퍼 함수
+function truncateText(text, maxLength) {
+  if (!text) return '';
+  return text.length > maxLength ? text.substring(0, maxLength) + '...' : text;
+}
+
 // 일지 목록 렌더링 헬퍼 함수
 function getDailyLogsHtml(logs, threadId) {
   if (!logs || logs.length === 0) {
@@ -188,14 +194,14 @@ function renderBoard() {
       const tDiv = document.createElement('div');
       tDiv.className = 'kanban-thread';
       tDiv.innerHTML = `
-        <div class="thread-title">${thread.name}</div>
+        <div class="thread-title" title="${thread.name}">${truncateText(thread.name, 45)}</div>
         <div class="thread-tag">${renderEmoji(thread.archived ? '📦' : currentTagCol.emoji)}${thread.archived ? '보관됨 (완료)' : currentTagCol.name}</div>
         ${idleWarningHtml}
         <div class="thread-meta">
-          <div class="meta-item"><span class="meta-icon">📝</span> <b>요약:</b> ${meta.summary}</div>
-          <div class="meta-item"><span class="meta-icon">📋</span> <b>업무:</b> ${latestLog}</div>
-          <div class="meta-item"><span class="meta-icon">👤</span> <b>담당:</b> ${meta.assignees.main}(정) / ${meta.assignees.sub}(부)</div>
-          <div class="meta-item"><span class="meta-icon">👥</span> <b>팀원:</b> ${meta.members.length > 0 ? meta.members.join(', ') : '없음'}</div>
+          <div class="meta-item" title="${meta.summary}"><span class="meta-icon">📝</span> <b>요약:</b> ${truncateText(meta.summary, 22)}</div>
+          <div class="meta-item" title="${latestLog}"><span class="meta-icon">📋</span> <b>업무:</b> ${truncateText(latestLog, 22)}</div>
+          <div class="meta-item" title="정: ${meta.assignees.main}, 부: ${meta.assignees.sub}"><span class="meta-icon">👤</span> <b>담당:</b> ${truncateText(meta.assignees.main, 8)}(정) / ${truncateText(meta.assignees.sub, 8)}(부)</div>
+          <div class="meta-item" title="${meta.members.length > 0 ? meta.members.join(', ') : '없음'}"><span class="meta-icon">👥</span> <b>팀원:</b> ${truncateText(meta.members.length > 0 ? meta.members.join(', ') : '없음', 20)}</div>
         </div>
         <div class="thread-footer">
           <div class="thread-date">${formatDiscordDate(thread.createdAt)}</div>

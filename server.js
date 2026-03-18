@@ -216,7 +216,7 @@ app.get('/api/tags', (req, res) => {
 app.get('/api/threads/:threadId/messages', async (req, res) => {
   try {
     const thread = await client.channels.fetch(req.params.threadId);
-    const messages = await thread.messages.fetch({ limit: 10 });
+    const messages = await thread.messages.fetch({ limit: 5 });
     
     const messageList = messages
       .reverse()
