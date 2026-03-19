@@ -4,7 +4,7 @@ export async function onRequestGet(context) {
   const threadId = params.threadId;
 
   try {
-    const discordToken = await env.KANBAN_KV.get('DISCORD_TOKEN');
+    const discordToken = env.DISCORD_TOKEN || await env.KANBAN_KV.get('DISCORD_TOKEN');
     const res = await fetch(`https://discord.com/api/v10/channels/${threadId}/messages?limit=5`, {
       headers: { "Authorization": `Bot ${discordToken}` }
     });
@@ -45,7 +45,7 @@ export async function onRequestPost(context) {
     const { content } = await request.json();
     if (!content || !content.trim()) return new Response(JSON.stringify({ error: '메시지 내용이 없습니다.' }), { status: 400 });
 
-    const discordToken = await env.KANBAN_KV.get('DISCORD_TOKEN');
+    const discordToken = env.DISCORD_TOKEN || await env.KANBAN_KV.get('DISCORD_TOKEN');
     const res = await fetch(`https://discord.com/api/v10/channels/${threadId}/messages`, {
       method: 'POST',
       headers: {

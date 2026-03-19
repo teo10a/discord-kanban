@@ -1,7 +1,6 @@
+const socket = io();
 let columns = [];
 let threads = [];
-let viewMode = 'all'; // 'priority', 'category', 'all'
-let currentOpenThreadId = null;
 
 // 날짜 포맷팅 함수 (디스코드 스타일)
 function formatDiscordDate(dateString) {
@@ -36,80 +35,15 @@ function renderEmoji(emoji) {
   return `${emoji} `;
 }
 
-// 텍스트 말줄임 헬퍼 함수
-function truncateText(text, maxLength) {
-  if (!text) return '';
-  return text.length > maxLength ? text.substring(0, maxLength) + '...' : text;
-}
-
-// 일지 목록 렌더링 헬퍼 함수
-function getDailyLogsHtml(logs, threadId) {
-  if (!logs || logs.length === 0) {
-    return '<div class="daily-log-item"><span class="daily-log-text">아직 작성된 일지가 없습니다.</span></div>';
-  }
-  return logs.map(l => `
-    <div class="daily-log-item">
-      <span class="daily-log-date">[${l.date}]</span> 
-      <span class="daily-log-text">${l.content}</span>
-      <div class="daily-log-actions">
-        <span onclick="editDailyLog('${threadId}', ${l.timestamp})" title="수정">✏️</span>
-        <span onclick="deleteDailyLog('${threadId}', ${l.timestamp})" title="삭제">❌</span>
-      </div>
-    </div>
-  `).join('');
-}
-
 // 칸반 컬럼 렌더링
 function renderBoard() {
   const board = document.getElementById('kanban-board');
   board.innerHTML = '';
-
-  // 태그들을 우선순위용과 분류용으로 자동 분리
-  const priorityKeywords = ['우선', '높음', '보통', '낮음', '긴급', '중요', '우선순위'];
-  let priorityCols = columns.filter(c => priorityKeywords.some(k => c.name.includes(k)) && c.id !== 'uncategorized' && c.id !== 'archived');
-  let categoryCols = columns.filter(c => !priorityCols.includes(c) && c.id !== 'uncategorized' && c.id !== 'archived');
-  
-  let uncategorizedCol = columns.find(c => c.id === 'uncategorized');
-  if (uncategorizedCol) {
-    uncategorizedCol = { ...uncategorizedCol, name: viewMode === 'category' ? '미분류' : '우선순위 없음' };
-  }
-  const archivedCol = columns.find(c => c.id === 'archived');
-
-  // 현재 보기 모드에 따라 렌더링할 컬럼 결정
-  const activeCols = viewMode === 'priority' ? priorityCols : (viewMode === 'category' ? categoryCols : []);
-  let viewColumns = [...activeCols];
-
-  // '전체 보기' 모드일 경우 가상의 '전체' 컬럼 추가
-  if (viewMode === 'all') {
-    viewColumns.push({ id: 'all', name: '전체 스레드', emoji: '📋' });
-  }
-  // 분류가 없는 항목을 표시 (우선순위/분류 보기 모두)
-  if ((viewMode === 'priority' || viewMode === 'category') && uncategorizedCol) {
-    viewColumns.push(uncategorizedCol);
-  }
-  // '보관됨 (완료)' 컬럼은 항상 표시
-  if (archivedCol) {
-    viewColumns.push(archivedCol);
-  }
-
-  viewColumns.forEach(col => {
+  columns.forEach(col => {
     const colDiv = document.createElement('div');
-    colDiv.className = `kanban-column ${viewMode === 'all' && col.id === 'all' ? 'full-width-column' : ''}`;
+    colDiv.className = 'kanban-column';
     colDiv.dataset.tagId = col.id; // 드롭했을 때 어떤 태그인지 알기 위해 ID 저장
-
-    const threadsInColumn = threads.filter(t => {
-      if (t.archived) return col.id === 'archived';
-      if (col.id === 'archived') return false;
-      
-      // 전체 보기 모드일 때 모든 활성 스레드 표시
-      if (col.id === 'all') return !t.archived;
-
-      // 스레드가 가진 태그 중 현재 뷰 모드에 해당하는 태그를 찾음
-      const matchedColId = t.appliedTags.find(tagId => activeCols.some(ac => ac.id === tagId));
-      return matchedColId ? matchedColId === col.id : col.id === 'uncategorized';
-    });
-    const threadCount = threadsInColumn.length;
-    colDiv.innerHTML = `<h2 class="column-title">${renderEmoji(col.emoji)}${col.name} <span class="column-thread-count">${threadCount}</span></h2><div class="column-threads"></div>`;
+    colDiv.innerHTML = `<h2 class="column-title">${renderEmoji(col.emoji)}${col.name}</h2><div class="column-threads"></div>`;
 
     // 드래그 앤 드롭 - Drop Zone(컬럼) 설정
     colDiv.addEventListener('dragover', (e) => {
@@ -129,34 +63,19 @@ function renderBoard() {
       const threadId = e.dataTransfer.getData('text/plain');
       if (!threadId) return;
 
+      // 웹 화면에서 먼저 카드를 새 위치로 이동시킴 (빠른 반응성)
       const threadIndex = threads.findIndex(t => t.id === threadId);
-      if (threadIndex === -1) return;
-      const thread = threads[threadIndex];
-
-      let isArchived = thread.archived;
-      let newTags = [...thread.appliedTags];
-
-      if (col.id === 'archived') {
-        isArchived = true;
-      } else {
-        isArchived = false;
-        // 현재 뷰 모드(우선순위 or 분류)에 해당하는 기존 태그만 제거
-        const activeColIds = activeCols.map(c => c.id);
-        newTags = newTags.filter(id => !activeColIds.includes(id));
-        // 새 컬럼 태그 추가
-        if (col.id !== 'uncategorized') newTags.unshift(col.id);
+      if (threadIndex !== -1 && threads[threadIndex].column !== col.name) {
+        threads[threadIndex].column = col.name;
+        threads[threadIndex].columnEmoji = col.emoji;
+        renderBoard(); // 바뀐 위치로 즉시 재렌더링
       }
-
-      // 화면 즉시 반영 (낙관적 UI)
-      thread.archived = isArchived;
-      thread.appliedTags = newTags;
-      renderBoard();
-
+      
       // 드롭 시 백엔드 API를 호출해 디스코드에 태그 변경 요청
       fetch(`/api/threads/${threadId}/tags`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ newTags, isArchived })
+        body: JSON.stringify({ tagId: col.id })
       }).then(async res => {
         if (!res.ok) {
           const err = await res.json();
@@ -167,41 +86,12 @@ function renderBoard() {
     });
 
     const threadList = colDiv.querySelector('.column-threads');
-    threadsInColumn.forEach(thread => {
-      // 미활동 일수 계산 및 경고 배지 생성
-      const lastMsgTime = thread.lastMessageTime || new Date(thread.createdAt).getTime();
-      const idleDays = (Date.now() - lastMsgTime) / (1000 * 60 * 60 * 24);
-
-      // 백엔드 업데이트 누락 등으로 meta가 없는 경우 기본값 제공 (에러 방지)
-      const meta = thread.meta || {
-        summary: '미설정', workLog: '미작성', dailyLogs: [], inactiveDays: 3,
-        assignees: { main: '미정', sub: '미정' }, members: []
-      };
-
-      const latestLog = meta.dailyLogs && meta.dailyLogs.length > 0 
-        ? meta.dailyLogs[meta.dailyLogs.length - 1].content 
-        : meta.workLog;
-
-      const isIdle = !thread.archived && idleDays >= meta.inactiveDays;
-      const idleWarningHtml = isIdle ? `<div class="idle-warning">⚠️ ${Math.floor(idleDays)}일째 메시지 없음 (기준: ${meta.inactiveDays}일)</div>` : '';
-
-      // 현재 뷰에 맞는 대표 태그 계산
-      const colsToSearch = viewMode === 'all' ? columns : activeCols;
-      const currentTagId = thread.appliedTags.find(tagId => colsToSearch.some(ac => ac.id === tagId));
-      const currentTagCol = colsToSearch.find(c => c.id === currentTagId) || uncategorizedCol;
-
+    threads.filter(t => t.column === col.name).forEach(thread => {
       const tDiv = document.createElement('div');
       tDiv.className = 'kanban-thread';
       tDiv.innerHTML = `
-        <div class="thread-title" title="${thread.name}">${truncateText(thread.name, 45)}</div>
-        <div class="thread-tag">${renderEmoji(thread.archived ? '📦' : currentTagCol.emoji)}${thread.archived ? '보관됨 (완료)' : currentTagCol.name}</div>
-        ${idleWarningHtml}
-        <div class="thread-meta">
-          <div class="meta-item" title="${meta.summary}"><span class="meta-icon">📝</span> <b>요약:</b> ${truncateText(meta.summary, 22)}</div>
-          <div class="meta-item" title="${latestLog}"><span class="meta-icon">📋</span> <b>업무:</b> ${truncateText(latestLog, 22)}</div>
-          <div class="meta-item" title="정: ${meta.assignees.main}, 부: ${meta.assignees.sub}"><span class="meta-icon">👤</span> <b>담당:</b> ${truncateText(meta.assignees.main, 8)}(정) / ${truncateText(meta.assignees.sub, 8)}(부)</div>
-          <div class="meta-item" title="${meta.members.length > 0 ? meta.members.join(', ') : '없음'}"><span class="meta-icon">👥</span> <b>팀원:</b> ${truncateText(meta.members.length > 0 ? meta.members.join(', ') : '없음', 20)}</div>
-        </div>
+        <div class="thread-title">${thread.name}</div>
+        <div class="thread-tag">${renderEmoji(thread.columnEmoji)}${thread.column}</div>
         <div class="thread-footer">
           <div class="thread-date">${formatDiscordDate(thread.createdAt)}</div>
           <div class="thread-messages-count">💬 ${thread.messageCount+1}</div>
@@ -228,58 +118,17 @@ function renderBoard() {
 
 // 스레드 상세 보기
 function showThreadDetail(thread) {
-  currentOpenThreadId = thread.id;
-  document.getElementById('modal-overlay').style.display = 'block';
-
-  const meta = thread.meta || {
-    summary: '미설정', workLog: '미작성', dailyLogs: [], inactiveDays: 3,
-    assignees: { main: '미정', sub: '미정' }, members: []
-  };
-
-  const dailyLogs = meta.dailyLogs || [];
-  const dailyLogsHtml = getDailyLogsHtml(dailyLogs, thread.id);
-
   const detail = document.getElementById('thread-detail');
   detail.innerHTML = `<span class="close-btn" onclick="hideThreadDetail()">&times;</span>
     <h3 class="detail-title">${thread.name}</h3>
-    <div class="detail-header-info">
-      <span><b>생성일:</b> ${formatDiscordDate(thread.createdAt)}</span> &nbsp;|&nbsp; 
-      <span><b>상태:</b> ${renderEmoji(thread.columnEmoji)}${thread.column}</span>
-    </div>
-    <div class="detail-content-wrapper">
-      <div class="detail-left-col">
-        <div class="detail-meta">
-          <div><b>📝 요약:</b> ${meta.summary}</div>
-          <div><b>👤 담당자:</b> 정(${meta.assignees.main}) / 부(${meta.assignees.sub})</div>
-          <div><b>👥 팀원:</b> ${meta.members.length > 0 ? meta.members.join(', ') : '없음'}</div>
-          <div><b>⚠️ 경고기준:</b> ${meta.inactiveDays}일 무응답 시 경고</div>
-        </div>
-        <div class="chat-section">
-          <div id="thread-messages">메시지 불러오는 중...</div>
-          <div class="message-input-container">
-            <input type="text" id="new-message-input" class="message-input" placeholder="메시지 보내기..." onkeydown="if(event.key === 'Enter') sendMessage('${thread.id}')" />
-            <button id="send-message-btn" class="message-send-btn" onclick="sendMessage('${thread.id}')">전송</button>
-          </div>
-        </div>
-      </div>
-      <div class="detail-right-col">
-        <div class="daily-log-section">
-          <h4>📋 일자별 업무 일지</h4>
-          <div id="daily-log-list-content" class="daily-log-list">
-            ${dailyLogsHtml}
-          </div>
-          <div class="daily-log-input-group">
-            <input type="text" id="new-daily-log-input" placeholder="오늘의 업무를 기록하세요..." onkeydown="if(event.key === 'Enter') submitDailyLog('${thread.id}')" />
-            <button onclick="submitDailyLog('${thread.id}')">추가</button>
-          </div>
-        </div>
-      </div>
+    <p><b>생성일:</b> ${formatDiscordDate(thread.createdAt)}</p>
+    <p><b>상태:</b> ${renderEmoji(thread.columnEmoji)}${thread.column}</p>
+    <div id="thread-messages">메시지 불러오는 중...</div>
+    <div class="message-input-container">
+      <input type="text" id="new-message-input" class="message-input" placeholder="메시지 보내기..." onkeydown="if(event.key === 'Enter') sendMessage('${thread.id}')" />
+      <button id="send-message-btn" class="message-send-btn" onclick="sendMessage('${thread.id}')">전송</button>
     </div>`;
   detail.style.display = 'block';
-
-  const logList = document.getElementById('daily-log-list-content');
-  if (logList) logList.scrollTop = logList.scrollHeight;
-
   loadMessages(thread.id);
 }
 
@@ -331,13 +180,8 @@ async function sendMessage(threadId) {
       input.value = '';
       loadMessages(threadId); // 전송 성공 시 메시지 목록 즉시 새로고침
     } else {
-      const isJson = res.headers.get("content-type")?.includes("application/json");
-      if (isJson) {
-        const err = await res.json();
-        alert('전송 실패: ' + (err.error || '오류가 발생했습니다.'));
-      } else {
-        alert(`전송 실패 (${res.status}): 백엔드 서버(server.js)가 최신 상태인지 확인해주세요.`);
-      }
+      const err = await res.json();
+      alert('전송 실패: ' + (err.error || '오류가 발생했습니다.'));
     }
   } catch (error) {
     alert('오류 발생: ' + error.message);
@@ -348,161 +192,48 @@ async function sendMessage(threadId) {
   }
 }
 
-async function submitDailyLog(threadId) {
-  const input = document.getElementById('new-daily-log-input');
-  const content = input.value.trim();
-  if (!content) return;
-
-  input.disabled = true;
-
-  try {
-    const res = await fetch(`/api/threads/${threadId}/daily-log`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ content })
-    });
-    if (res.ok) {
-      input.value = '';
-    } else {
-      const isJson = res.headers.get("content-type")?.includes("application/json");
-      if (isJson) {
-        const err = await res.json();
-        alert('일지 등록 실패: ' + (err.error || '오류가 발생했습니다.'));
-      } else {
-        alert(`일지 등록 실패 (${res.status}): 터미널에서 백엔드 서버(server.js)를 껐다가 다시 켜주세요.`);
-      }
-    }
-  } catch (error) {
-    alert('오류 발생: ' + error.message);
-  } finally {
-    input.disabled = false;
-    input.focus();
-  }
-}
-
-async function editDailyLog(threadId, timestamp) {
-  const thread = threads.find(t => t.id === threadId);
-  if (!thread) return;
-  const log = (thread.meta.dailyLogs || []).find(l => l.timestamp === timestamp);
-  if (!log) return;
-  
-  const newContent = prompt('업무 일지를 수정하세요:', log.content);
-  if (newContent === null || newContent.trim() === log.content) return;
-  if (!newContent.trim()) {
-     alert('내용을 입력해주세요.');
-     return;
-  }
-
-  try {
-    const res = await fetch(`/api/threads/${threadId}/daily-log/${timestamp}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ content: newContent })
-    });
-    if (!res.ok) {
-      const isJson = res.headers.get("content-type")?.includes("application/json");
-      if (isJson) {
-        const err = await res.json();
-        alert('수정 실패: ' + (err.error || '오류가 발생했습니다.'));
-      } else {
-        alert(`수정 실패 (${res.status}): 터미널에서 백엔드 서버(server.js)를 재시작해주세요.`);
-      }
-    }
-  } catch(e) {
-    alert('오류 발생: ' + e.message);
-  }
-}
-
-async function deleteDailyLog(threadId, timestamp) {
-  if (!confirm('이 일지를 삭제하시겠습니까?')) return;
-  try {
-    const res = await fetch(`/api/threads/${threadId}/daily-log/${timestamp}`, {
-      method: 'DELETE'
-    });
-    if (!res.ok) alert('삭제 실패');
-  } catch(e) {
-    alert('오류 발생: ' + e.message);
-  }
-}
-
 function hideThreadDetail() {
-  currentOpenThreadId = null;
-  document.getElementById('modal-overlay').style.display = 'none';
   document.getElementById('thread-detail').style.display = 'none';
 }
 
 // 데이터 초기화
-async function fetchInit(isSilent = false) {
-  const icon = document.getElementById('refresh-icon');
-  if (icon && !isSilent) icon.classList.add('spinning');
-  
-  try {
-    const [tagRes, threadRes] = await Promise.all([
-      fetch('/api/tags'),
-      fetch('/api/threads')
-    ]);
-
-    // 서버 응답이 정상(200 OK)이 아닐 경우 에러 캐치
-    if (!tagRes.ok || !threadRes.ok) {
-      let errMsg = `서버 응답 오류 (태그: ${tagRes.status}, 스레드: ${threadRes.status})`;
-      try {
-        const errData = await threadRes.json();
-        if (errData.error) errMsg = errData.error;
-      } catch(e) {}
-      throw new Error(errMsg);
-    }
-
-    columns = await tagRes.json();
-    threads = await threadRes.json();
-    
-    renderBoard();
-
-    // 열려있는 팝업이 있다면 내용만 부드럽게 갱신 (Socket.io 대체)
-    if (currentOpenThreadId) {
-      const currentThread = threads.find(t => t.id === currentOpenThreadId);
-      if (currentThread) {
-        const listContainer = document.getElementById('daily-log-list-content');
-        if (listContainer && currentThread.meta && currentThread.meta.dailyLogs) {
-          listContainer.innerHTML = getDailyLogsHtml(currentThread.meta.dailyLogs, currentThread.id);
-        }
-      }
-    }
-  } catch (error) {
-    console.error('데이터 로드 실패:', error);
-    if (!isSilent) alert('스레드를 불러오지 못했습니다. 폴더 구조나 KV 설정을 확인해주세요.\n사유: ' + error.message);
-  } finally {
-    if (icon && !isSilent) icon.classList.remove('spinning');
-  }
+async function fetchInit() {
+  const [tagRes, threadRes] = await Promise.all([
+    fetch('/api/tags'),
+    fetch('/api/threads')
+  ]);
+  columns = await tagRes.json();
+  threads = await threadRes.json();
+  renderBoard();
 }
 
-// Cloudflare Pages (Serverless) 환경용 실시간 Polling
-setInterval(() => {
-  fetchInit(true); // 5초마다 조용히 백그라운드 데이터 동기화
-}, 5000);
-
-window.setViewMode = function(mode) {
-  viewMode = mode;
-  document.querySelectorAll('.view-btn').forEach(b => b.classList.remove('active'));
-  document.getElementById('btn-view-' + mode).classList.add('active');
+// 실시간 이벤트
+socket.on('threadCreate', t => {
+  threads.push(t);
   renderBoard();
-};
+});
+socket.on('threadUpdate', t => {
+  const idx = threads.findIndex(th => th.id === t.id);
+  if (idx !== -1) threads[idx] = t;
+  renderBoard();
+});
+socket.on('threadDelete', id => {
+  threads = threads.filter(t => t.id !== id);
+  renderBoard();
+});
+
+// 태그(우선순위 등) 변경 시 자동으로 전체 새로고침
+socket.on('tagsUpdate', () => {
+  fetchInit();
+});
 
 window.onload = () => {
-  // 상단 UI(보기 토글) 주입
-  const topUIHtml = `
-    <div class="view-controls">
-      <button id="btn-view-all" class="view-btn active" onclick="setViewMode('all')">📋 전체 보기</button>
-      <button id="btn-view-priority" class="view-btn" onclick="setViewMode('priority')">📌 우선순위별 보기</button>
-      <button id="btn-view-category" class="view-btn" onclick="setViewMode('category')">📂 분류별 보기</button>
-    </div>`;
-  document.getElementById('kanban-board').insertAdjacentHTML('beforebegin', topUIHtml);
-
   fetchInit();
   
   // 새로고침 버튼 추가
   const refreshBtn = document.createElement('button');
   refreshBtn.className = 'refresh-btn';
-  refreshBtn.innerHTML = '<span id="refresh-icon">🔄</span> 새로고침';
+  refreshBtn.innerHTML = '🔄 새로고침';
   refreshBtn.onclick = fetchInit;
   document.body.appendChild(refreshBtn);
 };

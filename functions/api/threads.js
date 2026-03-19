@@ -3,13 +3,15 @@ export async function onRequestGet(context) {
   
   try {
     // 1. Cloudflare KV에서 업무 일지 메타데이터 불러오기
-    const discordToken = await env.KANBAN_KV.get('DISCORD_TOKEN');
-    const forumChannelId = await env.KANBAN_KV.get('FORUM_CHANNEL_ID');
+    // 로컬 환경변수(.dev.vars)가 있으면 우선 사용하고, 없으면 KV에서 가져옵니다.
+    const discordToken = env.DISCORD_TOKEN || await env.KANBAN_KV.get('DISCORD_TOKEN');
+    const forumChannelId = env.FORUM_CHANNEL_ID || await env.KANBAN_KV.get('FORUM_CHANNEL_ID');
+    
     const metadataString = await env.KANBAN_KV.get('THREAD_METADATA');
     const threadMetadata = metadataString ? JSON.parse(metadataString) : {};
     
     if (!discordToken || !forumChannelId) {
-      throw new Error('KV 저장소에 DISCORD_TOKEN 또는 FORUM_CHANNEL_ID가 설정되지 않았습니다.');
+      throw new Error('환경 변수(또는 KV)에 DISCORD_TOKEN / FORUM_CHANNEL_ID가 설정되지 않았습니다.');
     }
 
     const headers = {

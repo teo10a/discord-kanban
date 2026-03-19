@@ -2,11 +2,11 @@ export async function onRequestGet(context) {
   const { env } = context;
   
   try {
-    const discordToken = await env.KANBAN_KV.get('DISCORD_TOKEN');
-    const forumChannelId = await env.KANBAN_KV.get('FORUM_CHANNEL_ID');
+    const discordToken = env.DISCORD_TOKEN || await env.KANBAN_KV.get('DISCORD_TOKEN');
+    const forumChannelId = env.FORUM_CHANNEL_ID || await env.KANBAN_KV.get('FORUM_CHANNEL_ID');
 
     if (!discordToken || !forumChannelId) {
-      throw new Error('KV 저장소에 DISCORD_TOKEN 또는 FORUM_CHANNEL_ID가 설정되지 않았습니다.');
+      throw new Error('환경 변수(또는 KV)에 DISCORD_TOKEN / FORUM_CHANNEL_ID가 설정되지 않았습니다.');
     }
 
     const response = await fetch(`https://discord.com/api/v10/channels/${forumChannelId}`, {
