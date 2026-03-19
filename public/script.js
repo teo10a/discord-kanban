@@ -243,28 +243,38 @@ function showThreadDetail(thread) {
   const detail = document.getElementById('thread-detail');
   detail.innerHTML = `<span class="close-btn" onclick="hideThreadDetail()">&times;</span>
     <h3 class="detail-title">${thread.name}</h3>
-    <p><b>생성일:</b> ${formatDiscordDate(thread.createdAt)}</p>
-    <p><b>상태:</b> ${renderEmoji(thread.columnEmoji)}${thread.column}</p>
-    <div class="detail-meta">
-      <div><b>📝 요약:</b> ${meta.summary}</div>
-      <div><b>👤 담당자:</b> 정(${meta.assignees.main}) / 부(${meta.assignees.sub})</div>
-      <div><b>👥 팀원:</b> ${meta.members.length > 0 ? meta.members.join(', ') : '없음'}</div>
-      <div><b>⚠️ 경고기준:</b> ${meta.inactiveDays}일 무응답 시 경고</div>
+    <div class="detail-header-info">
+      <span><b>생성일:</b> ${formatDiscordDate(thread.createdAt)}</span> &nbsp;|&nbsp; 
+      <span><b>상태:</b> ${renderEmoji(thread.columnEmoji)}${thread.column}</span>
     </div>
-    <div class="daily-log-section">
-      <h4>📋 일자별 업무 일지</h4>
-      <div id="daily-log-list-content" class="daily-log-list">
-        ${dailyLogsHtml}
+    <div class="detail-content-wrapper">
+      <div class="detail-left-col">
+        <div class="detail-meta">
+          <div><b>📝 요약:</b> ${meta.summary}</div>
+          <div><b>👤 담당자:</b> 정(${meta.assignees.main}) / 부(${meta.assignees.sub})</div>
+          <div><b>👥 팀원:</b> ${meta.members.length > 0 ? meta.members.join(', ') : '없음'}</div>
+          <div><b>⚠️ 경고기준:</b> ${meta.inactiveDays}일 무응답 시 경고</div>
+        </div>
+        <div class="chat-section">
+          <div id="thread-messages">메시지 불러오는 중...</div>
+          <div class="message-input-container">
+            <input type="text" id="new-message-input" class="message-input" placeholder="메시지 보내기..." onkeydown="if(event.key === 'Enter') sendMessage('${thread.id}')" />
+            <button id="send-message-btn" class="message-send-btn" onclick="sendMessage('${thread.id}')">전송</button>
+          </div>
+        </div>
       </div>
-      <div class="daily-log-input-group">
-        <input type="text" id="new-daily-log-input" placeholder="오늘의 업무를 기록하세요..." onkeydown="if(event.key === 'Enter') submitDailyLog('${thread.id}')" />
-        <button onclick="submitDailyLog('${thread.id}')">추가</button>
+      <div class="detail-right-col">
+        <div class="daily-log-section">
+          <h4>📋 일자별 업무 일지</h4>
+          <div id="daily-log-list-content" class="daily-log-list">
+            ${dailyLogsHtml}
+          </div>
+          <div class="daily-log-input-group">
+            <input type="text" id="new-daily-log-input" placeholder="오늘의 업무를 기록하세요..." onkeydown="if(event.key === 'Enter') submitDailyLog('${thread.id}')" />
+            <button onclick="submitDailyLog('${thread.id}')">추가</button>
+          </div>
+        </div>
       </div>
-    </div>
-    <div id="thread-messages">메시지 불러오는 중...</div>
-    <div class="message-input-container">
-      <input type="text" id="new-message-input" class="message-input" placeholder="메시지 보내기..." onkeydown="if(event.key === 'Enter') sendMessage('${thread.id}')" />
-      <button id="send-message-btn" class="message-send-btn" onclick="sendMessage('${thread.id}')">전송</button>
     </div>`;
   detail.style.display = 'block';
 
@@ -424,14 +434,21 @@ function hideThreadDetail() {
 
 // 데이터 초기화
 async function fetchInit() {
-  const [tagRes, threadRes] = await Promise.all([
-    fetch('/api/tags'),
-    fetch('/api/threads')
-  ]);
-  columns = await tagRes.json();
-  threads = await threadRes.json();
+  const icon = document.getElementById('refresh-icon');
+  if (icon) icon.classList.add('spinning');
   
-  renderBoard();
+  try {
+    const [tagRes, threadRes] = await Promise.all([
+      fetch('/api/tags'),
+      fetch('/api/threads')
+    ]);
+    columns = await tagRes.json();
+    threads = await threadRes.json();
+    
+    renderBoard();
+  } finally {
+    if (icon) icon.classList.remove('spinning');
+  }
 }
 
 // 실시간 이벤트
@@ -485,7 +502,7 @@ window.onload = () => {
   // 새로고침 버튼 추가
   const refreshBtn = document.createElement('button');
   refreshBtn.className = 'refresh-btn';
-  refreshBtn.innerHTML = '🔄 새로고침';
+  refreshBtn.innerHTML = '<span id="refresh-icon">🔄</span> 새로고침';
   refreshBtn.onclick = fetchInit;
   document.body.appendChild(refreshBtn);
 };

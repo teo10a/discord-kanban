@@ -270,7 +270,7 @@ h1 {
   border-radius: 8px;
   box-shadow: 0 4px 24px rgba(0,0,0,0.15);
   padding: 32px;
-  width: 440px;
+  width: 900px;
   max-width: 90vw;
   max-height: 85vh;
   overflow-y: auto;
@@ -301,16 +301,34 @@ h1 {
 #thread-detail .close-btn:focus-visible {
   color: #dbdee1;
 }
-#thread-detail p {
-  margin: 6px 0;
+.detail-header-info {
   color: #949ba4;
   font-size: 0.95em;
+  margin-bottom: 20px;
+}
+.detail-content-wrapper {
+  display: flex;
+  gap: 24px;
+  text-align: left;
+  align-items: stretch;
+}
+.detail-left-col {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+.detail-right-col {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
 }
 .detail-meta {
   background: #1e1f22;
   border-radius: 6px;
   padding: 16px;
-  margin-top: 16px;
   text-align: left;
   font-size: 0.95em;
   color: #dbdee1;
@@ -320,13 +338,21 @@ h1 {
   gap: 8px;
   word-break: break-word;
 }
+.chat-section {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
 .daily-log-section {
   background: #2b2d31;
   border-radius: 6px;
   padding: 16px;
-  margin-top: 16px;
   text-align: left;
   border-left: 4px solid #23a559;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
 }
 .daily-log-section h4 {
   margin: 0 0 12px 0;
@@ -334,7 +360,7 @@ h1 {
   font-size: 1.05em;
 }
 .daily-log-list {
-  max-height: 120px;
+  flex: 1;
   overflow-y: auto;
   margin-bottom: 12px;
   display: flex;
@@ -402,14 +428,15 @@ h1 {
   background: #1a7c43;
 }
 #thread-messages {
-  margin-top: 20px;
   padding: 16px;
   background: #2b2d31;
   border-radius: 8px;
   border: 1px solid #1e1f22;
   text-align: left;
   overflow-y: auto;
-  max-height: 50vh;
+  flex: 1;
+  min-height: 250px;
+  max-height: 55vh;
 }
 .message-item {
   display: flex;
@@ -524,6 +551,16 @@ h1 {
   background-color: #4f545c;
   cursor: not-allowed;
 }
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+#refresh-icon {
+  display: inline-block;
+}
+#refresh-icon.spinning {
+  animation: spin 1s linear infinite;
+}
 @keyframes fadeIn {
   from { opacity: 0; }
   to { opacity: 1; }
@@ -540,6 +577,9 @@ h1 {
   .kanban-column.full-width-column {
     min-width: 100%;
     max-width: 100%;
+  }
+  .detail-content-wrapper {
+    flex-direction: column;
   }
   #kanban-board {
     padding: 16px;

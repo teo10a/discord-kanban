@@ -27,16 +27,32 @@ const client = new Client({
   ]
 });
 
-// 환경 변수 설정
-const DISCORD_TOKEN = process.env.DISCORD_TOKEN;
-const FORUM_CHANNEL_ID = process.env.FORUM_CHANNEL_ID?.trim() || '연동할_포럼_채널_ID';
+// 전역 환경 변수 (Cloudflare KV에서 불러올 예정)
+let DISCORD_TOKEN = '';
+let FORUM_CHANNEL_ID = '';
 
-if (!DISCORD_TOKEN || DISCORD_TOKEN === '당신의_디스코드_봇_토큰' || !DISCORD_TOKEN.includes('.')) {
-  console.error('오류: .env 파일에 유효한 DISCORD_TOKEN이 설정되지 않았습니다.');
-  if (DISCORD_TOKEN && !DISCORD_TOKEN.includes('.')) {
-    console.error('힌트: 현재 입력된 토큰은 ID 형태인 것 같습니다. Bot 메뉴에서 "Reset Token"을 눌러 가져온 긴 토큰을 사용하세요.');
-  }
-  process.exit(1);
+// Cloudflare KV API 접속 정보 (.env에서 읽음)
+const CF_ACCOUNT_ID = process.env.CF_ACCOUNT_ID;
+const CF_NAMESPACE_ID = process.env.CF_NAMESPACE_ID;
+const CF_API_TOKEN = process.env.CF_API_TOKEN;
+
+// 1. Cloudflare KV 읽기 헬퍼 함수
+async function getKvValue(key) {
+  if (!CF_ACCOUNT_ID || !CF_NAMESPACE_ID || !CF_API_TOKEN) return null;
+  const url = `https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT_ID}/storage/kv/namespaces/${CF_NAMESPACE_ID}/values/${key}`;
+  const res = await fetch(url, { headers: { 'Authorization': `Bearer ${CF_API_TOKEN}` } });
+  return res.ok ? await res.text() : null;
+}
+
+// 2. Cloudflare KV 쓰기 헬퍼 함수
+async function putKvValue(key, value) {
+  if (!CF_ACCOUNT_ID || !CF_NAMESPACE_ID || !CF_API_TOKEN) return;
+  const url = `https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT_ID}/storage/kv/namespaces/${CF_NAMESPACE_ID}/values/${key}`;
+  await fetch(url, {
+    method: 'PUT',
+    headers: { 'Authorization': `Bearer ${CF_API_TOKEN}` },
+    body: typeof value === 'string' ? value : JSON.stringify(value)
+  });
 }
 
 // 포럼 태그와 칸반 컬럼 매핑 (태그 ID -> 컬럼명)
@@ -53,17 +69,12 @@ const METADATA_FILE = path.join(__dirname, 'threadMetadata.json');
 let threadMetadata = {};
 
 // 서버 시작 시 파일에서 기존 메타데이터 불러오기
-if (fs.existsSync(METADATA_FILE)) {
-  try {
-    const data = fs.readFileSync(METADATA_FILE, 'utf8');
-    threadMetadata = JSON.parse(data);
-  } catch (error) {
-    console.error('메타데이터 파일 로드 실패:', error);
-  }
-}
+// (동기식 파일 로드는 하단 startServer() 비동기 함수로 이동)
 
 // 메타데이터를 로컬 파일에 저장하는 헬퍼 함수
 function saveThreadMetadata() {
+  // 로컬 파일과 함께 Cloudflare KV에도 비동기로 동기화
+  putKvValue('THREAD_METADATA', threadMetadata).catch(e => console.error('KV 메타데이터 저장 실패:', e));
   try {
     fs.writeFileSync(METADATA_FILE, JSON.stringify(threadMetadata, null, 2), 'utf8');
   } catch (error) {
@@ -425,5 +436,39 @@ client.on('messageCreate', (message) => {
   }
 });
 
-client.login(DISCORD_TOKEN);
-server.listen(3001, () => console.log('백엔드 서버가 3001번 포트에서 실행 중입니다.'));
+// 서버 초기화 및 실행 (Cloudflare KV 비동기 로드)
+async function startServer() {
+  console.log('Cloudflare KV에서 데이터를 불러오는 중...');
+  
+  // 1. KV에서 환경변수 로드 (KV에 없으면 기존 .env 값을 폴백으로 사용)
+  DISCORD_TOKEN = (await getKvValue('DISCORD_TOKEN')) || process.env.DISCORD_TOKEN;
+  FORUM_CHANNEL_ID = (await getKvValue('FORUM_CHANNEL_ID'))?.trim() || process.env.FORUM_CHANNEL_ID?.trim() || '연동할_포럼_채널_ID';
+
+  if (!DISCORD_TOKEN || !DISCORD_TOKEN.includes('.')) {
+    console.error('오류: 유효한 DISCORD_TOKEN이 설정되지 않았습니다. Cloudflare KV 또는 .env를 확인하세요.');
+    process.exit(1);
+  }
+
+  // 2. KV에서 메타데이터(업무일지 등) 로드
+  const kvMetadata = await getKvValue('THREAD_METADATA');
+  if (kvMetadata) {
+    try {
+      threadMetadata = JSON.parse(kvMetadata);
+      console.log('✅ Cloudflare KV에서 업무일지 메타데이터를 성공적으로 불러왔습니다.');
+    } catch (e) {
+      console.error('KV 메타데이터 파싱 실패:', e);
+    }
+  } else if (fs.existsSync(METADATA_FILE)) {
+    try {
+      const data = fs.readFileSync(METADATA_FILE, 'utf8');
+      threadMetadata = JSON.parse(data);
+    } catch (error) {
+      console.error('로컬 메타데이터 로드 실패:', error);
+    }
+  }
+
+  client.login(DISCORD_TOKEN);
+  server.listen(3001, () => console.log('백엔드 서버가 3001번 포트에서 실행 중입니다.'));
+}
+
+startServer();
