@@ -1,4 +1,3 @@
-const socket = io();
 let columns = [];
 let threads = [];
 let viewMode = 'all'; // 'priority', 'category', 'all'
@@ -433,52 +432,53 @@ function hideThreadDetail() {
 }
 
 // 데이터 초기화
-async function fetchInit() {
+async function fetchInit(isSilent = false) {
   const icon = document.getElementById('refresh-icon');
-  if (icon) icon.classList.add('spinning');
+  if (icon && !isSilent) icon.classList.add('spinning');
   
   try {
     const [tagRes, threadRes] = await Promise.all([
       fetch('/api/tags'),
       fetch('/api/threads')
     ]);
+
+    // 서버 응답이 정상(200 OK)이 아닐 경우 에러 캐치
+    if (!tagRes.ok || !threadRes.ok) {
+      let errMsg = `서버 응답 오류 (태그: ${tagRes.status}, 스레드: ${threadRes.status})`;
+      try {
+        const errData = await threadRes.json();
+        if (errData.error) errMsg = errData.error;
+      } catch(e) {}
+      throw new Error(errMsg);
+    }
+
     columns = await tagRes.json();
     threads = await threadRes.json();
     
     renderBoard();
+
+    // 열려있는 팝업이 있다면 내용만 부드럽게 갱신 (Socket.io 대체)
+    if (currentOpenThreadId) {
+      const currentThread = threads.find(t => t.id === currentOpenThreadId);
+      if (currentThread) {
+        const listContainer = document.getElementById('daily-log-list-content');
+        if (listContainer && currentThread.meta && currentThread.meta.dailyLogs) {
+          listContainer.innerHTML = getDailyLogsHtml(currentThread.meta.dailyLogs, currentThread.id);
+        }
+      }
+    }
+  } catch (error) {
+    console.error('데이터 로드 실패:', error);
+    if (!isSilent) alert('스레드를 불러오지 못했습니다. 폴더 구조나 KV 설정을 확인해주세요.\n사유: ' + error.message);
   } finally {
-    if (icon) icon.classList.remove('spinning');
+    if (icon && !isSilent) icon.classList.remove('spinning');
   }
 }
 
-// 실시간 이벤트
-socket.on('threadCreate', t => {
-  threads.push(t);
-  renderBoard();
-});
-socket.on('threadUpdate', t => {
-  const idx = threads.findIndex(th => th.id === t.id);
-  if (idx !== -1) threads[idx] = t;
-  renderBoard();
-
-  // 팝업이 열려있다면 일지 목록 리렌더링 (깜빡임 없이)
-  if (currentOpenThreadId === t.id) {
-    const listContainer = document.getElementById('daily-log-list-content');
-    if (listContainer && t.meta && t.meta.dailyLogs) {
-      listContainer.innerHTML = getDailyLogsHtml(t.meta.dailyLogs, t.id);
-      listContainer.scrollTop = listContainer.scrollHeight;
-    }
-  }
-});
-socket.on('threadDelete', id => {
-  threads = threads.filter(t => t.id !== id);
-  renderBoard();
-});
-
-// 태그(우선순위 등) 변경 시 자동으로 전체 새로고침
-socket.on('tagsUpdate', () => {
-  fetchInit();
-});
+// Cloudflare Pages (Serverless) 환경용 실시간 Polling
+setInterval(() => {
+  fetchInit(true); // 5초마다 조용히 백그라운드 데이터 동기화
+}, 5000);
 
 window.setViewMode = function(mode) {
   viewMode = mode;

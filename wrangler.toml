@@ -1,0 +1,7 @@
+name = "discord-kanban"
+compatibility_date = "2024-03-19"
+pages_build_output_dir = "public"
+
+[[kv_namespaces]]
+binding = "KANBAN_KV"
+id = "fc8eceb9d5f64344bf3df4bb7f5bd54e"
