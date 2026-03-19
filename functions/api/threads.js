@@ -3,15 +3,19 @@ export async function onRequestGet(context) {
   
   try {
     // 1. Cloudflare KV에서 업무 일지 메타데이터 불러오기
-    // 로컬 환경변수(.dev.vars)가 있으면 우선 사용하고, 없으면 KV에서 가져옵니다.
-    const discordToken = env.DISCORD_TOKEN || await env.KANBAN_KV.get('DISCORD_TOKEN');
-    const forumChannelId = env.FORUM_CHANNEL_ID || await env.KANBAN_KV.get('FORUM_CHANNEL_ID');
+    let discordToken = env.DISCORD_TOKEN;
+    let forumChannelId = env.FORUM_CHANNEL_ID;
     
-    const metadataString = await env.KANBAN_KV.get('THREAD_METADATA');
+    if (env.KANBAN_KV) {
+      if (!discordToken) discordToken = await env.KANBAN_KV.get('DISCORD_TOKEN');
+      if (!forumChannelId) forumChannelId = await env.KANBAN_KV.get('FORUM_CHANNEL_ID');
+    }
+
+    const metadataString = env.KANBAN_KV ? await env.KANBAN_KV.get('THREAD_METADATA') : null;
     const threadMetadata = metadataString ? JSON.parse(metadataString) : {};
     
     if (!discordToken || !forumChannelId) {
-      throw new Error('환경 변수(또는 KV)에 DISCORD_TOKEN / FORUM_CHANNEL_ID가 설정되지 않았습니다.');
+      throw new Error('디스코드 토큰이나 채널 ID가 없습니다. 환경 변수를 확인해주세요.');
     }
 
     const headers = {
@@ -19,26 +23,39 @@ export async function onRequestGet(context) {
       "Content-Type": "application/json"
     };
 
-    // 2. 디스코드 REST API 동시 호출 (채널 태그, 활성 스레드, 보관된 스레드)
-    const [channelRes, activeRes, archivedRes] = await Promise.all([
-      fetch(`https://discord.com/api/v10/channels/${forumChannelId}`, { headers }),
-      fetch(`https://discord.com/api/v10/channels/${forumChannelId}/threads/active`, { headers }),
+    // 2. 디스코드 채널 정보를 먼저 호출하여 guild_id(서버 ID)를 얻습니다.
+    const channelRes = await fetch(`https://discord.com/api/v10/channels/${forumChannelId}`, { headers });
+    if (!channelRes.ok) {
+      const errText = await channelRes.text();
+      throw new Error(`채널 조회 실패 (${channelRes.status}). 이유: ${errText}`);
+    }
+    const channelData = await channelRes.json();
+    const guildId = channelData.guild_id;
+
+    // 3. 디스코드 REST API 호출 (서버의 활성 스레드 전체, 채널의 보관된 스레드)
+    const [activeRes, archivedRes] = await Promise.all([
+      fetch(`https://discord.com/api/v10/guilds/${guildId}/threads/active`, { headers }),
       fetch(`https://discord.com/api/v10/channels/${forumChannelId}/threads/archived/public?limit=50`, { headers })
     ]);
 
-    if (!channelRes.ok || !activeRes.ok || !archivedRes.ok) {
-      throw new Error('디스코드 API 호출에 실패했습니다. 토큰 및 채널 ID를 확인하세요.');
+    if (!activeRes.ok || !archivedRes.ok) {
+      let errText = '';
+      try {
+        if (!activeRes.ok) errText = await activeRes.text();
+        else errText = await archivedRes.text();
+      } catch(e) {}
+      throw new Error(`스레드 조회 실패 (활성:${activeRes.status}, 보관:${archivedRes.status}). 이유: ${errText}`);
     }
 
-    const channelData = await channelRes.json();
     const activeData = await activeRes.json();
     const archivedData = await archivedRes.json();
 
-    // 3. 포럼 채널의 태그 정보 캐싱
+    // 4. 서버 전체 활성 스레드 중, 현재 포럼 채널에 속한 스레드만 필터링
+    const activeThreads = (activeData.threads || []).filter(t => t.parent_id === forumChannelId);
     const forumTags = channelData.available_tags || [];
-    const allThreads = [...(activeData.threads || []), ...(archivedData.threads || [])];
+    const allThreads = [...activeThreads, ...(archivedData.threads || [])];
 
-    // 4. 데이터 직렬화 (기존 server.js의 serializeThread 역할)
+    // 5. 데이터 직렬화 (기존 server.js의 serializeThread 역할)
     const threadList = allThreads.map(thread => {
       const columnId = thread.applied_tags?.[0];
       const tag = forumTags.find(t => t.id === columnId);

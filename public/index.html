@@ -8,6 +8,12 @@
 </head>
 <body>
   <h1>Discord Forum Kanban Board</h1>
+  <div class="view-controls">
+    <button class="view-btn active" onclick="setViewMode('all')">📋 전체 보기</button>
+    <button class="view-btn" onclick="setViewMode('priority')">📌 우선순위별</button>
+    <button class="view-btn" onclick="setViewMode('category')">📂 분류별</button>
+    <button class="view-btn" onclick="setViewMode('assignee')">👤 담당자별</button>
+  </div>
   <div id="kanban-board"></div>
   <div id="thread-detail" style="display:none;"></div>
   <script src="https://cdn.socket.io/4.8.3/socket.io.min.js"></script>

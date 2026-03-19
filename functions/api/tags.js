@@ -2,18 +2,26 @@ export async function onRequestGet(context) {
   const { env } = context;
   
   try {
-    const discordToken = env.DISCORD_TOKEN || await env.KANBAN_KV.get('DISCORD_TOKEN');
-    const forumChannelId = env.FORUM_CHANNEL_ID || await env.KANBAN_KV.get('FORUM_CHANNEL_ID');
+    let discordToken = env.DISCORD_TOKEN;
+    let forumChannelId = env.FORUM_CHANNEL_ID;
+
+    if (env.KANBAN_KV) {
+      if (!discordToken) discordToken = await env.KANBAN_KV.get('DISCORD_TOKEN');
+      if (!forumChannelId) forumChannelId = await env.KANBAN_KV.get('FORUM_CHANNEL_ID');
+    }
 
     if (!discordToken || !forumChannelId) {
-      throw new Error('환경 변수(또는 KV)에 DISCORD_TOKEN / FORUM_CHANNEL_ID가 설정되지 않았습니다.');
+      throw new Error('디스코드 토큰이나 채널 ID가 없습니다. 환경 변수를 확인해주세요.');
     }
 
     const response = await fetch(`https://discord.com/api/v10/channels/${forumChannelId}`, {
       headers: { "Authorization": `Bot ${discordToken}` }
     });
 
-    if (!response.ok) throw new Error('채널 정보를 불러오지 못했습니다.');
+    if (!response.ok) {
+      const errText = await response.text();
+      throw new Error(`채널 정보를 불러오지 못했습니다 (상태: ${response.status}). 이유: ${errText}`);
+    }
 
     const channelData = await response.json();
     const tags = (channelData.available_tags || []).map(tag => ({
