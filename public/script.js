@@ -198,13 +198,23 @@ function hideThreadDetail() {
 
 // 데이터 초기화
 async function fetchInit() {
-  const [tagRes, threadRes] = await Promise.all([
-    fetch('/api/tags'),
-    fetch('/api/threads')
-  ]);
-  columns = await tagRes.json();
-  threads = await threadRes.json();
-  renderBoard();
+  try {
+    const [tagRes, threadRes] = await Promise.all([
+      fetch('/api/tags'),
+      fetch('/api/threads')
+    ]);
+    
+    if (!tagRes.ok || !threadRes.ok) {
+      throw new Error(`API 호출 실패 (태그: ${tagRes.status}, 스레드: ${threadRes.status}) - Cloudflare 함수 오류입니다.`);
+    }
+
+    columns = await tagRes.json();
+    threads = await threadRes.json();
+    renderBoard();
+  } catch (error) {
+    console.error('데이터 로딩 오류:', error);
+    alert('데이터를 불러오지 못했습니다. (서버/설정 오류)\n\n상세: ' + error.message);
+  }
 }
 
 // 실시간 이벤트
