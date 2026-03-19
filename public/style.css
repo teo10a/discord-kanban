@@ -264,6 +264,10 @@ h1 {
 .meta-info-box b {
   color: #f2f3f5;
 }
+.edit-meta {
+  font-size: 0.9em;
+  margin-left: 6px;
+}
 .assignee-badge {
   display: inline-block;
   padding: 2px 8px;

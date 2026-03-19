@@ -243,6 +243,22 @@ function renderBoard() {
   });
 }
 
+// 메타데이터 HTML 생성 헬퍼
+function getMetaHtml(thread) {
+  const meta = thread.meta || { summary: '미설정', assignees: { main: '미정', sub: '미정' }, members: [], inactiveDays: 3 };
+  return `
+    <div><b>📝 요약:</b> ${meta.summary} <span class="log-action-btn edit-meta" onclick="editMeta('${thread.id}', 'summary')">✏️</span></div>
+    <div>
+      <b>👤 담당자:</b>
+      <span class="assignee-badge main">${meta.assignees?.main || '미정'} (정)</span>
+      <span class="assignee-badge sub">${meta.assignees?.sub || '미정'} (부)</span>
+      <span class="log-action-btn edit-meta" onclick="editMeta('${thread.id}', 'assignees')">✏️</span>
+    </div>
+    <div><b>👥 팀원:</b> ${meta.members?.length > 0 ? meta.members.join(', ') : '없음'} <span class="log-action-btn edit-meta" onclick="editMeta('${thread.id}', 'members')">✏️</span></div>
+    <div><b>⚠️ 경고기준:</b> ${meta.inactiveDays}일 무응답 시 경고 <span class="log-action-btn edit-meta" onclick="editMeta('${thread.id}', 'inactiveDays')">✏️</span></div>
+  `;
+}
+
 // 스레드 상세 보기
 function showThreadDetail(thread) {
   currentOpenThreadId = thread.id;
@@ -255,16 +271,7 @@ function showThreadDetail(thread) {
     <h3 class="detail-title">${thread.name}</h3>
     <div class="detail-content-layout">
       <div class="detail-left-col">
-        <div class="meta-info-box">
-          <div><b>📝 요약:</b> ${meta.summary}</div>
-          <div>
-            <b>👤 담당자:</b>
-            <span class="assignee-badge main">${meta.assignees?.main || '미정'} (정)</span>
-            <span class="assignee-badge sub">${meta.assignees?.sub || '미정'} (부)</span>
-          </div>
-          <div><b>👥 팀원:</b> ${meta.members?.length > 0 ? meta.members.join(', ') : '없음'}</div>
-          <div><b>⚠️ 경고기준:</b> ${meta.inactiveDays}일 무응답 시 경고</div>
-        </div>
+        <div id="meta-info-container" class="meta-info-box">${getMetaHtml(thread)}</div>
         <div class="chat-section">
           <div id="thread-messages">메시지 불러오는 중...</div>
           <div class="message-input-container">
@@ -426,6 +433,48 @@ async function deleteDailyLog(threadId, timestamp) {
   }
 }
 
+// 메타데이터 수정 로직
+async function editMeta(threadId, field) {
+  const thread = threads.find(t => t.id === threadId);
+  if (!thread) return;
+  const meta = thread.meta;
+  let payload = {};
+
+  if (field === 'summary') {
+    const val = prompt('요약을 입력하세요:', meta.summary === '미설정' ? '' : meta.summary);
+    if (val === null) return;
+    payload.summary = val.trim() || '미설정';
+  } else if (field === 'assignees') {
+    const main = prompt('정담당자 이름을 입력하세요 (없으면 빈칸):', meta.assignees?.main === '미정' ? '' : meta.assignees?.main);
+    if (main === null) return;
+    const sub = prompt('부담당자 이름을 입력하세요 (없으면 빈칸):', meta.assignees?.sub === '미정' ? '' : meta.assignees?.sub);
+    if (sub === null) return;
+    payload.assignees = { main: main.trim() || '미정', sub: sub.trim() || '미정' };
+  } else if (field === 'members') {
+    const val = prompt('참여 팀원 이름을 쉼표(,)로 구분해서 입력하세요:', meta.members?.join(', '));
+    if (val === null) return;
+    payload.members = val.split(',').map(s => s.trim()).filter(Boolean);
+  } else if (field === 'inactiveDays') {
+    const val = prompt('경고 기준 일수를 입력하세요 (숫자):', meta.inactiveDays);
+    if (val === null) return;
+    const num = parseInt(val, 10);
+    if (isNaN(num)) return alert('숫자만 입력해주세요.');
+    payload.inactiveDays = num;
+  }
+
+  try {
+    const res = await fetch(`/api/threads/${threadId}/meta`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    if (res.ok) fetchInit(true);
+    else alert('수정 실패');
+  } catch (e) {
+    alert('오류 발생: ' + e.message);
+  }
+}
+
 // 데이터 초기화
 async function fetchInit(isSilent = false) {
   const icon = document.getElementById('refresh-icon');
@@ -461,6 +510,10 @@ async function fetchInit(isSilent = false) {
         const listContainer = document.getElementById('daily-log-list-content');
         if (listContainer && currentThread.meta && currentThread.meta.dailyLogs) {
           listContainer.innerHTML = getDailyLogsHtml(currentThread.meta.dailyLogs, currentThread.id);
+        }
+        const metaContainer = document.getElementById('meta-info-container');
+        if (metaContainer) {
+          metaContainer.innerHTML = getMetaHtml(currentThread);
         }
       }
     }
