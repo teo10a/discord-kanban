@@ -2,6 +2,7 @@ let columns = [];
 let threads = [];
 let currentOpenThreadId = null;
 let viewMode = 'all'; // 'all', 'priority', 'category', 'assignee'
+let currentEditState = null; // 커스텀 모달 상태 저장용
 
 // 날짜 포맷팅 함수 (디스코드 스타일)
 function formatDiscordDate(dateString) {
@@ -245,17 +246,18 @@ function renderBoard() {
 
 // 메타데이터 HTML 생성 헬퍼
 function getMetaHtml(thread) {
+  const editIconSvg = `<svg class="edit-icon" fill="currentColor" viewBox="0 0 24 24"><path d="M19.2929 9.8299L19.9409 9.18278C21.353 7.77064 21.353 5.47197 19.9409 4.05892C18.5287 2.64678 16.2292 2.64678 14.817 4.05892L14.1699 4.70603L19.2929 9.8299ZM12.8962 5.97688L5.18469 13.6906L10.3085 18.813L18.0201 11.0992L12.8962 5.97688ZM4.11851 15.254L8.74614 19.8816L4.90558 20.778C4.02241 20.9841 3.21855 20.1793 3.42533 19.2965L4.11851 15.254Z"></path></svg>`;
   const meta = thread.meta || { summary: '미설정', assignees: { main: '미정', sub: '미정' }, members: [], inactiveDays: 3 };
   return `
-    <div><b>📝 요약:</b> ${meta.summary} <span class="log-action-btn edit-meta" onclick="editMeta('${thread.id}', 'summary')">✏️</span></div>
+    <div><b>📝 요약:</b> <span class="meta-summary-text">${meta.summary}</span> <span onclick="openEditModal('${thread.id}', 'summary')">${editIconSvg}</span></div>
     <div>
       <b>👤 담당자:</b>
       <span class="assignee-badge main">${meta.assignees?.main || '미정'} (정)</span>
       <span class="assignee-badge sub">${meta.assignees?.sub || '미정'} (부)</span>
-      <span class="log-action-btn edit-meta" onclick="editMeta('${thread.id}', 'assignees')">✏️</span>
+      <span onclick="openEditModal('${thread.id}', 'assignees')">${editIconSvg}</span>
     </div>
-    <div><b>👥 팀원:</b> ${meta.members?.length > 0 ? meta.members.join(', ') : '없음'} <span class="log-action-btn edit-meta" onclick="editMeta('${thread.id}', 'members')">✏️</span></div>
-    <div><b>⚠️ 경고기준:</b> ${meta.inactiveDays}일 무응답 시 경고 <span class="log-action-btn edit-meta" onclick="editMeta('${thread.id}', 'inactiveDays')">✏️</span></div>
+    <div><b>👥 팀원:</b> ${meta.members?.length > 0 ? meta.members.join(', ') : '없음'} <span onclick="openEditModal('${thread.id}', 'members')">${editIconSvg}</span></div>
+    <div><b>⚠️ 경고기준:</b> ${meta.inactiveDays}일 무응답 시 경고 <span onclick="openEditModal('${thread.id}', 'inactiveDays')">${editIconSvg}</span></div>
   `;
 }
 
@@ -275,7 +277,7 @@ function showThreadDetail(thread) {
         <div class="chat-section">
           <div id="thread-messages">메시지 불러오는 중...</div>
           <div class="message-input-container">
-            <input type="text" id="new-message-input" class="message-input" placeholder="메시지 보내기..." onkeydown="if(event.key === 'Enter') sendMessage('${thread.id}')" />
+            <textarea id="new-message-input" class="message-input" rows="1" placeholder="메시지 보내기... (Shift+Enter로 줄바꿈)" onkeydown="if(event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); sendMessage('${thread.id}'); }"></textarea>
             <button id="send-message-btn" class="message-send-btn" onclick="sendMessage('${thread.id}')">전송</button>
           </div>
         </div>
@@ -287,7 +289,7 @@ function showThreadDetail(thread) {
             ${dailyLogsHtml}
           </div>
           <div class="daily-log-input-group">
-            <input type="text" id="new-daily-log-input" placeholder="오늘의 업무를 기록하세요..." onkeydown="if(event.key === 'Enter') submitDailyLog('${thread.id}')" />
+            <textarea id="new-daily-log-input" rows="1" placeholder="오늘의 업무를 기록하세요... (Shift+Enter로 줄바꿈)" onkeydown="if(event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); submitDailyLog('${thread.id}'); }"></textarea>
             <button onclick="submitDailyLog('${thread.id}')">추가</button>
           </div>
         </div>
@@ -370,7 +372,7 @@ function getDailyLogsHtml(logs, threadId) {
       <span class="log-date">[${log.date}]</span>
       <span class="log-content">${log.content}</span>
       <div class="log-actions">
-        <span class="log-action-btn" onclick="editDailyLog('${threadId}', ${log.timestamp})">✏️</span>
+        <span class="log-action-btn" onclick="openEditModal('${threadId}', 'dailyLog', ${log.timestamp})">✏️</span>
         <span class="log-action-btn" onclick="deleteDailyLog('${threadId}', ${log.timestamp})">❌</span>
       </div>
     </div>
@@ -401,24 +403,6 @@ async function submitDailyLog(threadId) {
   }
 }
 
-// 일지 수정
-async function editDailyLog(threadId, timestamp) {
-  const newContent = prompt('수정할 내용을 입력하세요:');
-  if (!newContent || !newContent.trim()) return;
-  
-  try {
-    const res = await fetch(`/api/threads/${threadId}/daily-log/${timestamp}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ content: newContent.trim() })
-    });
-    if (res.ok) fetchInit(true);
-    else alert('일지 수정 실패');
-  } catch (e) {
-    alert('오류 발생: ' + e.message);
-  }
-}
-
 // 일지 삭제
 async function deleteDailyLog(threadId, timestamp) {
   if (!confirm('정말로 이 일지를 삭제하시겠습니까?')) return;
@@ -433,42 +417,104 @@ async function deleteDailyLog(threadId, timestamp) {
   }
 }
 
-// 메타데이터 수정 로직
-async function editMeta(threadId, field) {
+// 커스텀 모달 열기
+function openEditModal(threadId, field, extraData = null) {
   const thread = threads.find(t => t.id === threadId);
   if (!thread) return;
   const meta = thread.meta;
+  currentEditState = { threadId, field, extraData };
+  
+  const titleEl = document.getElementById('edit-modal-title');
+  const inputsEl = document.getElementById('edit-modal-inputs');
+  
+  if (field === 'summary') {
+    titleEl.textContent = '📝 요약 수정';
+    const safeSummary = meta.summary === '미설정' ? '' : meta.summary.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    inputsEl.innerHTML = `<label>요약 내용</label><textarea id="modal-input-1" class="custom-modal-input" rows="3" placeholder="요약을 입력하세요" onkeydown="if(event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); saveEditModal(); }">${safeSummary}</textarea>`;
+  } else if (field === 'assignees') {
+    titleEl.textContent = '👤 담당자 수정';
+    inputsEl.innerHTML = `
+      <label>정담당자</label><input type="text" id="modal-input-1" class="custom-modal-input" placeholder="이름 (없으면 빈칸)" value="${meta.assignees?.main === '미정' ? '' : meta.assignees?.main}" onkeydown="if(event.key === 'Enter') document.getElementById('modal-input-2').focus()" />
+      <label>부담당자</label><input type="text" id="modal-input-2" class="custom-modal-input" placeholder="이름 (없으면 빈칸)" value="${meta.assignees?.sub === '미정' ? '' : meta.assignees?.sub}" onkeydown="if(event.key === 'Enter') saveEditModal()" />
+    `;
+  } else if (field === 'members') {
+    titleEl.textContent = '👥 팀원 수정';
+    inputsEl.innerHTML = `<label>참여 팀원 (쉼표로 구분)</label><input type="text" id="modal-input-1" class="custom-modal-input" placeholder="예: 김철수, 박영희" value="${meta.members?.join(', ') || ''}" onkeydown="if(event.key === 'Enter') saveEditModal()" />`;
+  } else if (field === 'inactiveDays') {
+    titleEl.textContent = '⚠️ 경고 기준 일수 수정';
+    inputsEl.innerHTML = `<label>미활동 경고 기준 (일)</label><input type="number" id="modal-input-1" class="custom-modal-input" placeholder="숫자만 입력" value="${meta.inactiveDays}" onkeydown="if(event.key === 'Enter') saveEditModal()" />`;
+  } else if (field === 'dailyLog') {
+    const log = meta.dailyLogs.find(l => l.timestamp === extraData);
+    if (!log) return;
+    titleEl.textContent = '📋 업무 일지 수정';
+    const safeContent = log.content.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    inputsEl.innerHTML = `<label>일지 내용</label><textarea id="modal-input-1" class="custom-modal-input" rows="3" placeholder="수정할 내용을 입력하세요" onkeydown="if(event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); saveEditModal(); }">${safeContent}</textarea>`;
+  }
+  
+  document.getElementById('edit-modal-overlay').style.display = 'flex';
+  setTimeout(() => document.getElementById('modal-input-1')?.focus(), 50);
+}
+
+// 커스텀 모달 닫기
+function closeEditModal() {
+  document.getElementById('edit-modal-overlay').style.display = 'none';
+  currentEditState = null;
+}
+
+// 커스텀 모달 저장
+async function saveEditModal() {
+  if (!currentEditState) return;
+  const { threadId, field, extraData } = currentEditState;
+
+  // 일지 수정은 API 엔드포인트가 다르므로 별도 처리
+  if (field === 'dailyLog') {
+    const newContent = document.getElementById('modal-input-1').value.trim();
+    if (!newContent) return;
+    try {
+      const res = await fetch(`/api/threads/${threadId}/daily-log/${extraData}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content: newContent })
+      });
+      if (res.ok) {
+        closeEditModal();
+        fetchInit(true);
+      } else alert('일지 수정 실패');
+    } catch (e) {
+      alert('오류 발생: ' + e.message);
+    }
+    return;
+  }
+
   let payload = {};
 
   if (field === 'summary') {
-    const val = prompt('요약을 입력하세요:', meta.summary === '미설정' ? '' : meta.summary);
-    if (val === null) return;
-    payload.summary = val.trim() || '미설정';
+    const val = document.getElementById('modal-input-1').value.trim();
+    payload.summary = val || '미설정';
   } else if (field === 'assignees') {
-    const main = prompt('정담당자 이름을 입력하세요 (없으면 빈칸):', meta.assignees?.main === '미정' ? '' : meta.assignees?.main);
-    if (main === null) return;
-    const sub = prompt('부담당자 이름을 입력하세요 (없으면 빈칸):', meta.assignees?.sub === '미정' ? '' : meta.assignees?.sub);
-    if (sub === null) return;
-    payload.assignees = { main: main.trim() || '미정', sub: sub.trim() || '미정' };
+    const main = document.getElementById('modal-input-1').value.trim();
+    const sub = document.getElementById('modal-input-2').value.trim();
+    payload.assignees = { main: main || '미정', sub: sub || '미정' };
   } else if (field === 'members') {
-    const val = prompt('참여 팀원 이름을 쉼표(,)로 구분해서 입력하세요:', meta.members?.join(', '));
-    if (val === null) return;
+    const val = document.getElementById('modal-input-1').value.trim();
     payload.members = val.split(',').map(s => s.trim()).filter(Boolean);
   } else if (field === 'inactiveDays') {
-    const val = prompt('경고 기준 일수를 입력하세요 (숫자):', meta.inactiveDays);
-    if (val === null) return;
+    const val = document.getElementById('modal-input-1').value.trim();
     const num = parseInt(val, 10);
     if (isNaN(num)) return alert('숫자만 입력해주세요.');
     payload.inactiveDays = num;
   }
-
+  
   try {
     const res = await fetch(`/api/threads/${threadId}/meta`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
     });
-    if (res.ok) fetchInit(true);
+    if (res.ok) {
+      closeEditModal();
+      fetchInit(true);
+    }
     else alert('수정 실패');
   } catch (e) {
     alert('오류 발생: ' + e.message);
@@ -543,3 +589,6 @@ window.onload = () => {
 };
 window.hideThreadDetail = hideThreadDetail;
 window.setViewMode = setViewMode;
+window.openEditModal = openEditModal;
+window.closeEditModal = closeEditModal;
+window.saveEditModal = saveEditModal;

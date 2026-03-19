@@ -16,6 +16,18 @@
   </div>
   <div id="kanban-board"></div>
   <div id="thread-detail" style="display:none;"></div>
+
+  <!-- 메타데이터 수정 커스텀 모달 -->
+  <div id="edit-modal-overlay" class="modal-overlay" style="display:none;">
+    <div class="custom-modal">
+      <h3 id="edit-modal-title">수정</h3>
+      <div id="edit-modal-inputs"></div>
+      <div class="custom-modal-actions">
+        <button class="btn-cancel" onclick="closeEditModal()">취소</button>
+        <button class="btn-save" onclick="saveEditModal()">저장</button>
+      </div>
+    </div>
+  </div>
   <script src="https://cdn.socket.io/4.8.3/socket.io.min.js"></script>
   <script src="script.js"></script>
 </body>
